@@ -1,0 +1,12 @@
+
+# 홈 위치 정렬
+movej([0, 0, 90, 0, 90, 0])
+wait(1.0)
+
+angle = [0]
+
+for ang in angle :
+    #tp_popup("ang: {0}".format(ang), DR_PM_MESSAGE)
+    gripper_move(ang)
+    wait(2)
+
