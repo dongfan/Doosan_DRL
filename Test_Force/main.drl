@@ -1,65 +1,85 @@
+
 # 순응 제어
 k_d = [300.0, 300.0, 300.0, 200.0, 200.0, 200.0]
 task_compliance_ctrl(k_d)
+
 # 강성 제어
 force_desired = 100.0
 f_d = [0.0, 0.0, -force_desired, 0.0, 0.0, 0.0]
 f_dir = [0, 0, 1, 0, 0, 0]
 set_desired_force(f_d, f_dir)
+
+#그리퍼 각도 저장
 angle = [700]
+
 while(True):
 	flange_serial_open(baudrate=57600, bytesize=DR_EIGHTBITS, parity=DR_PARITY_NONE, stopbits = DR_STOPBITS_ONE)
+
 	modbus_set_slaveid(1)
+
 	#256(40257) Torque enable
 	#282(40283) Goal Position
 	#275(40276) Goal Current
+
 	flange_serial_write(modbus_fc06(256,1))
 	flag, val = recv_check()
+
 	flange_serial_write(modbus_fc06(275,400))
 	flag, val = recv_check()
+
 	#flange_serial_write(modbus_fc16(282,2,[0,0]))
 	#flag, val = recv_check()
+
 	if flag == True :
 		break
+
 	flange_serial_close()
+
 # 외력감지
 while True:
     force_ext = get_tool_force()
     if force_ext[2] >10:
         release_force()
         release_compliance_ctrl()
-        for ang in angle :
-            #tp_popup("ang: {0}".format(ang), DR_PM_MESSAGE)
-            gripper_move(ang)
-            wait(2)
-        tp_popup("{}".format(force_ext))
+        
+        gripper_move(700)
+        wait(2)
+
+        tp_log("{}".format(force_ext))
         break
+
+
 # 홈 위치 정렬
 movej([0, 0, 90, 0, 90, 0])
 wait(1.0)
+
 movel(posx(0, -100, 0, 0, 0, 0), v=50, a=50, mod=DR_MV_MOD_REL)
+
 # 순응 제어
 k_d = [300.0, 300.0, 300.0, 200.0, 200.0, 200.0]
 task_compliance_ctrl(k_d)
+
 # 강성 제어
-force_desired = 30.0
+force_desired = 80.0
 f_d = [0.0, 0.0, -force_desired, 0.0, 0.0, 0.0]
 f_dir = [0, 0, 1, 0, 0, 0]
 set_desired_force(f_d, f_dir)
-angle = [0]
+
 # 외력감지
 while True:
     force_ext = get_tool_force()
     if force_ext[2] >10:
         release_force()
         release_compliance_ctrl()
-        for ang in angle :
-            #tp_popup("ang: {0}".format(ang), DR_PM_MESSAGE)
-            gripper_move(ang)
-            wait(2)
-        tp_popup("{}".format(force_ext))
+        
+        gripper_move(0)
+        wait(2)
+
+        tp_log("{}".format(force_ext))
         break
+
 movel(posx(0, 0, 50, 0, 0, 0), v=50, a=50, mod=DR_MV_MOD_REL)
+
 # 홈 위치 정렬
 movej([0, 0, 90, 0, 90, 0])
 wait(1.0)
