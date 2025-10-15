@@ -1,0 +1,152 @@
+#gripper
+g_slaveid = 0
+flag = 0
+# 통신할 대상 그리퍼의 id를 g_slaveid라는 전역 변수에 저장
+def modbus_set_slaveid(slaveid):
+    global g_slaveid
+    g_slaveid = slaveid
+# Modbus Function Code 3 (Read Holding Registers) 명령 패킷을 만듬
+# 그리퍼로부터 startaddress에서 시작해 cnt 개수만큼의 데이터를 읽어올 때 사용
+def modbus_fc03(startaddress, cnt):
+    global g_slaveid
+    data = (g_slaveid).to_bytes(1, byteorder='big')
+    data += (3).to_bytes(1, byteorder='big')
+    data += (startaddress).to_bytes(2, byteorder='big')
+    data += (cnt).to_bytes(2, byteorder='big')
+    return modbus_send_make(data)
+# Modbus Function Code 6 (Write Single Register) 명령 패킷을 만듬
+#  그리퍼의 특정 address 레지스터 1개에 value 값을 쓸 때 사용
+def modbus_fc06(address, value):
+    global g_slaveid
+    data = (g_slaveid).to_bytes(1, byteorder='big')
+    data += (6).to_bytes(1, byteorder='big')
+    data += (address).to_bytes(2, byteorder='big')
+    data += (value).to_bytes(2, byteorder='big')
+    return modbus_send_make(data)
+#  Modbus Function Code 16 (Write Multiple Registers) 명령 패킷을 만듬
+# startaddress에서 시작해 cnt 개수만큼의 레지스터에 valuelist의 값들을
+# 순서대로 쓸 때 사용
+def modbus_fc16(startaddress, cnt, valuelist):
+    global g_slaveid
+    data = (g_slaveid).to_bytes(1, byteorder='big')
+    data += (16).to_bytes(1, byteorder='big')
+    data += (startaddress).to_bytes(2, byteorder='big')
+    data += (cnt).to_bytes(2, byteorder='big')
+    data += (2*cnt).to_bytes(1, byteorder='big')
+    for i in range(0, cnt):
+        data += (valuelist[i]).to_bytes(2, byteorder='big')
+    return modbus_send_make(data)
+def recv_check():
+    size, val = flange_serial_read(0.5)
+    if size > 0:
+        tp_log(str(val))
+        return True, val
+    else:
+        tp_log("CRC Check Fail")
+        return False, val
+        
+while(True):
+    flange_serial_open(baudrate=57600, bytesize=DR_EIGHTBITS,
+                       parity=DR_PARITY_NONE, stopbits=DR_STOPBITS_ONE)
+    modbus_set_slaveid(1)
+    #256(40257) Torque enable
+    #282(40283) Goal Position
+    #275(40276) Goal Current
+    flange_serial_write(modbus_fc06(256, 1))
+    flag, val = recv_check()
+    flange_serial_write(modbus_fc06(275, 400))
+    flag, val = recv_check()
+    #flange_serial_write(modbus_fc16(282,2,[0,0]))
+    #flag, val = recv_check()
+    if flag == True:
+        break
+    flange_serial_close()
+# -----------------------------
+def gripper_move(stroke):
+    flange_serial_write(modbus_fc16(282, 2, [stroke, 0]))
+    flag, val = recv_check()
+    if flag == False:
+        tp_log("gripper_move: Failed to get response")
+    #wait(1)
+def gripper_get_position():
+    flange_serial_write(modbus_fc03(290, 2))
+    flag, val = recv_check()
+    if flag == True:
+        if val[1] == 3 and val[2] == 4:
+            reg_low_word = (val[3] << 8) | val[4]
+            reg_high_word = (val[5] << 8) | val[6]
+            present_position = (reg_high_word << 16) | reg_low_word
+            return True, present_position
+        else:
+            tp_log("gripper_get_position: Invalid response frame")
+            return False, 0
+    tp_log("gripper_get_position: Failed to read")
+    return False, 0
+
+def gripper_get_current():
+    # 현재 전류(Present Current): Modbus 주소 40288 → offset 287
+    # 2바이트(=1레지스터) 읽기
+    flange_serial_write(modbus_fc03(287, 1))
+
+    flag, val = recv_check()
+    if flag == True:
+        # 응답형식: [SlaveID][Function][ByteCount][DataHigh][DataLow][CRC_L][CRC_H]
+        if val[1] == 3 and val[2] == 2:
+            # 전류 데이터 (2바이트)
+            reg_word = (val[3] << 8) | val[4]
+
+            # signed 16-bit 변환 (음수 전류도 표현 가능)
+            if reg_word & 0x8000:   # 음수비트(부호비트) 체크
+                reg_word -= 0x10000
+
+            present_current = reg_word
+            return True, present_current
+        else:
+            tp_log("gripper_get_current: Invalid response frame")
+            return False, 0
+    tp_log("gripper_get_current: Failed to read")
+    return False, 0
+
+angle = [700, 500, 300, 100, 0]
+for ang in angle:
+    #tp_popup("Goal Pulse: {0}".format(ang), DR_PM_MESSAGE)
+    gripper_move(ang)
+    wait(5)
+    success, current_pos = gripper_get_position()
+    ok, current = gripper_get_current()
+
+    if ok:
+        print(f"현재 전류: {current} mA")
+    else:
+        print("전류 읽기 실패")
+
+    # if success:
+    #     tp_popup(f"현재 전류: {current} mA")
+    #     #tp_popup("Present Pulse: {0} [pulse]".format(current_pos), DR_PM_MESSAGE)
+    # else:
+    #     #tp_popup("Failed to read Present Pulse", DR_PM_MESSAGE)
+    wait(2)
+
+# -------------------------------------------------------------------
+# angle = [700, 600, 500, 400, 300, 200, 100, 0]
+# for ang in angle:
+#     tp_popup("Goal Pulse: {0}".format(ang), DR_PM_MESSAGE)
+#     gripper_move(ang)
+#     wait(5)
+#     success, current_pos = gripper_get_position()
+#     if success:
+#         tp_popup("Present Pulse: {0} [pulse]".format(current_pos), DR_PM_MESSAGE)
+#     else:
+#         tp_popup("Failed to read Present Pulse", DR_PM_MESSAGE)
+#     wait(2)
+# -------------------------------------------------------------------
+
+tp_popup("Start Read Test", DR_PM_MESSAGE)
+wait(2)
+for i in range(5):
+    success, current_pos = gripper_get_position()
+    if success:
+        tp_popup("{0}".format(current_pos), DR_PM_MESSAGE)
+    else:
+        tp_popup("Read FAILED. Check LOG.", DR_PM_MESSAGE)
+    wait(3)

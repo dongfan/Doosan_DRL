@@ -1,0 +1,19 @@
+angle = [100, 250, 300, 320, 0]
+target_current = 150  # 목표 전류 (mA)
+for ang in angle:
+    #tp_popup("Goal Pulse: {0}".format(ang), DR_PM_MESSAGE)
+    gripper_move(ang)
+    wait(1)
+    #success, current_pos = gripper_get_position()
+
+    success, current = gripper_get_current()
+
+    if success:
+        tp_popup("Present Pulse: {0} [pulse]".format(current), DR_PM_MESSAGE)
+        if current > target_current:
+            gripper_move(0)
+            tp_popup("전류 {0} mA 이상 감지 → 정지".format(current), DR_PM_MESSAGE)
+            break;
+    else:
+        tp_popup("Failed to read Present Pulse", DR_PM_MESSAGE)
+    wait(2)
